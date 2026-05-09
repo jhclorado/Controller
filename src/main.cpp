@@ -1,140 +1,83 @@
 #include <Arduino.h>
-#include <ezButton.h>
+#include <WiFi.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
+#include "joystick.h"
 
-// =========================
-// Pin Definitions
-// =========================
-#define VRX_PIN 34
-#define VRY_PIN 35
-#define SW_PIN  32
+// RECEIVER MAC
+uint8_t receiverAddress[] = {0x30, 0x76, 0xF5, 0x90, 0x5C, 0x4C};
 
-// =========================
-// Direction Enum
-// =========================
-enum JoyDirection {
-  CENTER,
-  TOP,
-  BOTTOM,
-  LEFT,
-  RIGHT,
-  TOP_LEFT,
-  TOP_RIGHT,
-  BOTTOM_LEFT,
-  BOTTOM_RIGHT
-};
+// BUTTONS
+#define BTN_WALK   14
+#define BTN_STAND  27
+#define BTN_JUMP   26
 
-// =========================
-// Joystick Class
-// =========================
-class Joystick {
-  private:
-    int vrxPin;
-    int vryPin;
-    ezButton button;
+char command;
 
-    int xValue = 0;
-    int yValue = 0;
+// SEND CALLBACK
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 
-    // ESP32 ADC midpoint
-    const int MID = 2048;
+  Serial.print("Send Status: ");
 
-    // Deadzone size
-    const int DEADZONE = 400;
+  if (status == ESP_NOW_SEND_SUCCESS) {
+    Serial.println("Success");
+  } else {
+    Serial.println("Fail");
+  }
+}
 
-  public:
-    Joystick(int xPin, int yPin, int swPin)
-      : vrxPin(xPin), vryPin(yPin), button(swPin) {}
+void sendCommand(char cmd) {
 
-    void begin() {
-      analogSetAttenuation(ADC_11db);
-      button.setDebounceTime(50);
-    }
+  command = cmd;
 
-    void update() {
-      button.loop();
+  esp_err_t result = esp_now_send(
+    receiverAddress,
+    (uint8_t *)&command,
+    sizeof(command)
+  );
 
-      xValue = analogRead(vrxPin);
-      yValue = analogRead(vryPin);
-    }
+  if (result == ESP_OK) {
+    Serial.print("Sent command: ");
+    Serial.println(command);
+  } else {
+    Serial.println("Send Error");
+  }
+}
 
-    int getX() {
-      return xValue;
-    }
-
-    int getY() {
-      return yValue;
-    }
-
-    int getButtonState() {
-      return button.getState();
-    }
-
-    bool isPressed() {
-      return button.isPressed();
-    }
-
-    bool isReleased() {
-      return button.isReleased();
-    }
-
-    JoyDirection getDirection() {
-
-      // FIXED: Y-axis inverted
-      bool up    = yValue < (MID - DEADZONE);
-      bool down  = yValue > (MID + DEADZONE);
-
-      bool left  = xValue < (MID - DEADZONE);
-      bool right = xValue > (MID + DEADZONE);
-
-      // Diagonal directions
-      if (up && left) return TOP_LEFT;
-      if (up && right) return TOP_RIGHT;
-      if (down && left) return BOTTOM_LEFT;
-      if (down && right) return BOTTOM_RIGHT;
-
-      // Main directions
-      if (up) return TOP;
-      if (down) return BOTTOM;
-      if (left) return LEFT;
-      if (right) return RIGHT;
-
-      return CENTER;
-    }
-
-    String directionToString(JoyDirection dir) {
-      switch (dir) {
-        case TOP: return "TOP";
-        case BOTTOM: return "BOTTOM";
-        case LEFT: return "LEFT";
-        case RIGHT: return "RIGHT";
-        case TOP_LEFT: return "TOP_LEFT";
-        case TOP_RIGHT: return "TOP_RIGHT";
-        case BOTTOM_LEFT: return "BOTTOM_LEFT";
-        case BOTTOM_RIGHT: return "BOTTOM_RIGHT";
-        default: return "CENTER";
-      }
-    }
-};
-
-// =========================
-// Create Joystick Object
-// =========================
-Joystick joystick(VRX_PIN, VRY_PIN, SW_PIN);
-
-// =========================
-// Setup
-// =========================
 void setup() {
-  Serial.begin(9600);
 
+  Serial.begin(115200);
   joystick.begin();
 
   Serial.println("Joystick Ready");
+
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(); 
+  esp_wifi_set_channel(6, WIFI_SECOND_CHAN_NONE);
+  Serial.println("Controller Ready");
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("ESP-NOW Init Failed");
+    return;
+  }
+
+  esp_now_register_send_cb(OnDataSent);
+
+  esp_now_peer_info_t peerInfo = {};
+
+  memcpy(peerInfo.peer_addr, receiverAddress, 6);
+
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
+
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Failed to Add Peer");
+    return;
+  }
+
+  Serial.println("Peer Added");
 }
 
-// =========================
-// Loop
-// =========================
 void loop() {
   joystick.update();
 
@@ -155,10 +98,12 @@ void loop() {
   // Button events
   if (joystick.isPressed()) {
     Serial.println("Button Pressed");
+    sendCommand('w');
   }
 
   if (joystick.isReleased()) {
     Serial.println("Button Released");
+    sendCommand('q');
   }
 
   delay(100);
