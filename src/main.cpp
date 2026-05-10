@@ -98,12 +98,34 @@ void loop() {
   // Button events
   if (joystick.isPressed()) {
     Serial.println("Button Pressed");
-    sendCommand('w');
+    sendCommand(' ');
   }
 
   if (joystick.isReleased()) {
     Serial.println("Button Released");
     sendCommand('q');
+    Serial.println("JUMP");
+    
+  }
+  if (joystick.directionToString(dir) == "CENTER") {
+    sendCommand('q');
+    Serial.println("STAND");
+  }
+  else if (joystick.directionToString(dir) == "LEFT") {
+    sendCommand('d');
+    Serial.println("TURN LEFT");
+  }
+  else if (joystick.directionToString(dir) == "RIGHT") {
+    sendCommand('a');
+    Serial.println("TURN RIGHT");
+  }
+  else if (joystick.directionToString(dir) == "TOP") {
+    sendCommand('w');
+    Serial.println("WALK");
+  }
+  else if (joystick.directionToString(dir) == "BOTTOM") {
+    sendCommand('s');
+    Serial.println("REVERSE WALK");
   }
 
   delay(100);
